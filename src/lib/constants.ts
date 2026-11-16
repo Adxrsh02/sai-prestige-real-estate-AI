@@ -16,7 +16,7 @@ export const siteConfig: SiteConfig = {
     country: 'India',
   },
   social: {
-    instagram: 'https://instagram.com/saiprestige',
+    instagram: 'https://www.instagram.com/sai.prestige.realestate/',
     linkedin: 'https://www.linkedin.com/company/sai-prestige/?viewAsMember=true',
     whatsapp: 'https://wa.me/919326433965',
   },

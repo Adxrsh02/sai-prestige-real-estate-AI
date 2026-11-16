@@ -39,6 +39,10 @@ export default function RootLayout({
           '@type': 'AdministrativeArea',
           name: 'Navi Mumbai',
         },
+        sameAs: [
+          siteConfig.social.instagram,
+          siteConfig.social.linkedin,
+        ].filter(Boolean),
       },
       {
         '@type': 'WebSite',
