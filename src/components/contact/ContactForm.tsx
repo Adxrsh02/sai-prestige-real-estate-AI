@@ -1,11 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 import { CONTACT_REQUIREMENTS, ContactRequirement } from '@/types/contact';
-import { TurnstileWidget, TurnstileWidgetRef } from './TurnstileWidget';
 import { Button } from '@/components/ui/Button';
-import { CheckCircle2, AlertCircle, Send, Loader2 } from 'lucide-react';
+import { WhatsAppIcon } from '@/components/ui/WhatsAppIcon';
+import { AlertCircle, ExternalLink } from 'lucide-react';
 import { trackEnquiryConversion } from '@/lib/analytics';
 
 interface FormValues {
@@ -15,7 +14,6 @@ interface FormValues {
   requirement: ContactRequirement | '';
   location: string;
   message: string;
-  website_url: string; // Honeypot
 }
 
 const initialValues: FormValues = {
@@ -25,20 +23,14 @@ const initialValues: FormValues = {
   requirement: '',
   location: '',
   message: '',
-  website_url: '',
 };
 
 export const ContactForm: React.FC = () => {
-  const router = useRouter();
   const [values, setValues] = useState<FormValues>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<Record<string, boolean>>({});
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [turnstileError, setTurnstileError] = useState<string | null>(null);
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
-  const [serverMessage, setServerMessage] = useState<string | null>(null);
-
-  const turnstileRef = useRef<TurnstileWidgetRef>(null);
+  const [whatsappStatus, setWhatsappStatus] = useState<'idle' | 'opened' | 'error'>('idle');
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
 
   // Validate a single field
   const validateField = (name: keyof FormValues, value: string): string => {
@@ -49,19 +41,21 @@ export const ContactForm: React.FC = () => {
         if (value.trim().length > 80) return 'Name cannot exceed 80 characters.';
         return '';
 
-      case 'email':
+      case 'email': {
         if (!value.trim()) return 'Please enter your email address.';
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(value.trim())) return 'Please provide a valid email address.';
         return '';
+      }
 
-      case 'phone':
+      case 'phone': {
         if (!value.trim()) return 'Please enter your phone number.';
         const digits = value.replace(/\D/g, '');
         if (digits.length < 7 || digits.length > 15) {
           return 'Please enter a valid phone number (7 to 15 digits).';
         }
         return '';
+      }
 
       case 'requirement':
         if (!value) return 'Please choose a property requirement.';
@@ -99,31 +93,50 @@ export const ContactForm: React.FC = () => {
     setErrors((prev) => ({ ...prev, [name]: error }));
   };
 
-  const handleTurnstileVerify = useCallback((token: string) => {
-    setTurnstileToken(token);
-    setTurnstileError(null);
-  }, []);
-
-  const handleTurnstileExpire = useCallback(() => {
-    setTurnstileToken(null);
-    setTurnstileError('Verification expired. Please complete the security check again.');
-  }, []);
-
-  const handleTurnstileError = useCallback(() => {
-    setTurnstileToken(null);
-    setTurnstileError('Security verification failed. Please try again.');
-  }, []);
-
-  // Determine if form is valid for client-side enabling
+  // Determine if form is client-side valid
   const isFormValid =
     values.fullName.trim().length >= 2 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim()) &&
     values.phone.replace(/\D/g, '').length >= 7 &&
     values.requirement !== '' &&
-    values.message.trim().length >= 10 &&
-    turnstileToken !== null;
+    values.message.trim().length >= 10;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Build the formatted WhatsApp message
+  const createWhatsAppUrl = (formValues: FormValues): string => {
+    const lines: string[] = [
+      'Hello SAI PRESTIGE Team!',
+      '',
+      'I would like to enquire about your real estate services.',
+      '',
+      '*CUSTOMER DETAILS*',
+      '',
+      `Full Name: ${formValues.fullName.trim()}`,
+      `Email Address: ${formValues.email.trim()}`,
+      `Phone Number: ${formValues.phone.trim()}`,
+      '',
+      '*PROPERTY REQUIREMENTS*',
+      '',
+      `Interested In: ${formValues.requirement.trim()}`,
+    ];
+
+    if (formValues.location && formValues.location.trim()) {
+      lines.push(`Preferred Location: ${formValues.location.trim()}`);
+    }
+
+    lines.push(
+      `Additional Requirements: ${formValues.message.trim()}`,
+      '',
+      'I look forward to hearing from your team.',
+      '',
+      'Thank you!',
+      formValues.fullName.trim()
+    );
+
+    const fullMessage = lines.join('\n');
+    return `https://wa.me/919326433965?text=${encodeURIComponent(fullMessage)}`;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     // Trigger full validation across all fields
@@ -149,82 +162,24 @@ export const ContactForm: React.FC = () => {
     const hasErrors = Object.values(newErrors).some((err) => Boolean(err));
 
     if (hasErrors) {
-      setStatus('error');
-      setServerMessage('Please complete all required fields correctly before sending.');
+      setWhatsappStatus('error');
       return;
     }
 
-    if (!turnstileToken) {
-      setStatus('error');
-      setTurnstileError('Please complete the security verification challenge before submitting.');
-      return;
-    }
+    const url = createWhatsAppUrl(values);
+    setGeneratedUrl(url);
+    setWhatsappStatus('opened');
 
-    setStatus('submitting');
-    setServerMessage(null);
-
+    // Telemetry conversion tracking (non-blocking, PII-free)
     try {
-      const response = await fetch('/api/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fullName: values.fullName,
-          email: values.email,
-          phone: values.phone,
-          requirement: values.requirement,
-          location: values.location,
-          message: values.message,
-          website_url: values.website_url, // Honeypot
-          turnstileToken,
-        }),
-      });
+      trackEnquiryConversion(values.requirement || 'General Enquiry');
+    } catch {
+      // Ignore telemetry failure
+    }
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        setStatus('success');
-        setServerMessage(data.message || 'Your message has been sent successfully.');
-        const submittedReq = values.requirement || 'General Enquiry';
-        trackEnquiryConversion(submittedReq);
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('enquiry_submitted', 'true');
-        }
-        setValues(initialValues);
-        setTouched({});
-        setErrors({});
-        setTurnstileToken(null);
-        if (turnstileRef.current) {
-          turnstileRef.current.reset();
-        }
-        // Smoothly transition customer to dedicated luxury confirmation experience
-        setTimeout(() => {
-          router.push('/contact/thank-you');
-        }, 1200);
-      } else {
-        setStatus('error');
-        setServerMessage(
-          data.message ||
-            "We couldn't send your message right now. Please try again or contact us directly by phone or WhatsApp."
-        );
-        if (data.errors) {
-          setErrors(data.errors);
-        }
-        // Reset turnstile token to require a fresh verification token
-        setTurnstileToken(null);
-        if (turnstileRef.current) {
-          turnstileRef.current.reset();
-        }
-      }
-    } catch (err) {
-      console.error('[Contact Submission Exception]:', err);
-      setStatus('error');
-      setServerMessage(
-        "Network connection issue. Please verify your connection or reach out directly by phone or WhatsApp."
-      );
-      setTurnstileToken(null);
-      if (turnstileRef.current) {
-        turnstileRef.current.reset();
-      }
+    // Launch WhatsApp Click-to-Chat in a new window/tab
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -236,57 +191,52 @@ export const ContactForm: React.FC = () => {
           Tell Us What You&apos;re Looking For.
         </h2>
         <p className="mt-2 text-sm sm:text-base text-[var(--color-neutral-600)] leading-relaxed">
-          Share a few details about your property requirements. Our team will receive your enquiry
-          and use the information to understand how we may assist you.
+          Share your property requirements below. When you click Continue, WhatsApp will open with your complete enquiry ready to review and send directly to our senior advisory team.
         </p>
       </div>
 
-      {/* Submission Feedback Alert */}
+      {/* WhatsApp Opened Status Notification */}
       <div aria-live="polite" className="mb-6">
-        {status === 'success' && (
-          <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-sm">Your message has been sent successfully.</p>
-              <p className="text-xs sm:text-sm text-emerald-700 mt-1">
-                {serverMessage ||
-                  'Thank you for contacting SAI PRESTIGE. We have received your property requirements and will review them attentively.'}
-              </p>
+        {whatsappStatus === 'opened' && generatedUrl && (
+          <div className="p-4 rounded-xl bg-emerald-50/90 border border-emerald-200/90 text-emerald-950 flex flex-col gap-2.5 transition-all">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-emerald-600/15 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                <WhatsAppIcon className="w-4 h-4 fill-emerald-700" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm text-emerald-950 leading-snug">
+                  WhatsApp is opening with your enquiry details. Please review and tap Send to contact SAI PRESTIGE.
+                </p>
+                <p className="text-xs text-emerald-800/80 mt-1.5 leading-relaxed">
+                  If WhatsApp didn&apos;t open automatically,{' '}
+                  <a
+                    href={generatedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold underline underline-offset-2 text-emerald-900 hover:text-emerald-700 inline-flex items-center gap-1"
+                  >
+                    <span>tap here to open WhatsApp directly</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </p>
+              </div>
             </div>
           </div>
         )}
 
-        {status === 'error' && (
+        {whatsappStatus === 'error' && (
           <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-900 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-sm">Submission could not be completed.</p>
-              <p className="text-xs sm:text-sm text-red-700 mt-1">
-                {serverMessage ||
-                  "Please resolve the issues highlighted below or contact our team directly at +91 93264 33965."}
-              </p>
-            </div>
+            <p className="text-sm font-medium">
+              Please complete all required fields correctly before continuing to WhatsApp.
+            </p>
           </div>
         )}
       </div>
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-5">
-        {/* Anti-spam Honeypot Field (invisible to regular users) */}
-        <div style={{ display: 'none' }} aria-hidden="true">
-          <label htmlFor="website_url">Website URL (leave blank)</label>
-          <input
-            type="text"
-            id="website_url"
-            name="website_url"
-            value={values.website_url}
-            onChange={handleChange}
-            tabIndex={-1}
-            autoComplete="off"
-          />
-        </div>
-
-        {/* Row 1: Full Name & Email Address */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <form onSubmit={handleSubmit} noValidate className="space-y-6">
+        {/* Row 1: Full Name & Email */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
           {/* Full Name */}
           <div>
             <label
@@ -302,10 +252,11 @@ export const ContactForm: React.FC = () => {
               value={values.fullName}
               onChange={handleChange}
               onBlur={handleBlur}
-              placeholder="Enter your full name"
+              required
               aria-required="true"
               aria-invalid={touched.fullName && Boolean(errors.fullName)}
               aria-describedby={errors.fullName ? 'fullName-error' : undefined}
+              placeholder="e.g. Rajesh Sharma"
               className={`w-full h-11 px-3.5 text-sm rounded-lg border bg-[var(--color-neutral-50)]/50 transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-prestige-gold)] ${
                 touched.fullName && errors.fullName
                   ? 'border-red-400 focus:ring-red-400'
@@ -334,10 +285,11 @@ export const ContactForm: React.FC = () => {
               value={values.email}
               onChange={handleChange}
               onBlur={handleBlur}
-              placeholder="you@example.com"
+              required
               aria-required="true"
               aria-invalid={touched.email && Boolean(errors.email)}
               aria-describedby={errors.email ? 'email-error' : undefined}
+              placeholder="e.g. rajesh@example.com"
               className={`w-full h-11 px-3.5 text-sm rounded-lg border bg-[var(--color-neutral-50)]/50 transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-prestige-gold)] ${
                 touched.email && errors.email
                   ? 'border-red-400 focus:ring-red-400'
@@ -352,8 +304,8 @@ export const ContactForm: React.FC = () => {
           </div>
         </div>
 
-        {/* Row 2: Phone Number & Requirement */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        {/* Row 2: Phone Number & Requirement Dropdown */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
           {/* Phone Number */}
           <div>
             <label
@@ -369,10 +321,11 @@ export const ContactForm: React.FC = () => {
               value={values.phone}
               onChange={handleChange}
               onBlur={handleBlur}
-              placeholder="+91 93264 33965"
+              required
               aria-required="true"
               aria-invalid={touched.phone && Boolean(errors.phone)}
               aria-describedby={errors.phone ? 'phone-error' : undefined}
+              placeholder="e.g. +91 98200 12345"
               className={`w-full h-11 px-3.5 text-sm rounded-lg border bg-[var(--color-neutral-50)]/50 transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-prestige-gold)] ${
                 touched.phone && errors.phone
                   ? 'border-red-400 focus:ring-red-400'
@@ -386,13 +339,13 @@ export const ContactForm: React.FC = () => {
             )}
           </div>
 
-          {/* Property Requirement */}
+          {/* Requirement Dropdown */}
           <div>
             <label
               htmlFor="requirement"
               className="block text-xs uppercase tracking-wider font-medium text-[var(--color-prestige-charcoal)] mb-2"
             >
-              I&apos;m Interested In <span className="text-[var(--color-prestige-gold)]">*</span>
+              Interested In <span className="text-[var(--color-prestige-gold)]">*</span>
             </label>
             <div className="relative">
               <select
@@ -490,59 +443,22 @@ export const ContactForm: React.FC = () => {
           )}
         </div>
 
-        {/* Cloudflare Turnstile Widget (Directly above the Send Message button) */}
+        {/* Action Button: Continue on WhatsApp */}
         <div className="pt-2">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs uppercase tracking-wider font-medium text-[var(--color-neutral-600)]">
-              Security Verification
-            </span>
-            {turnstileToken && (
-              <span className="text-xs text-emerald-600 flex items-center gap-1 font-medium">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Verified
-              </span>
-            )}
-          </div>
-          
-          <TurnstileWidget
-            ref={turnstileRef}
-            onVerify={handleTurnstileVerify}
-            onExpire={handleTurnstileExpire}
-            onError={handleTurnstileError}
-          />
-
-          {turnstileError && (
-            <p className="mt-1 text-xs text-red-600">
-              {turnstileError}
-            </p>
-          )}
-        </div>
-
-        {/* Submit Action Button */}
-        <div className="pt-3">
           <Button
             type="submit"
             variant="primary"
             size="lg"
             fullWidth
-            disabled={!isFormValid || status === 'submitting'}
-            className="font-medium tracking-wide"
+            disabled={!isFormValid}
+            className="font-medium tracking-wide flex items-center justify-center gap-2.5 bg-[var(--color-prestige-gold)] hover:bg-[var(--color-prestige-gold-light)] text-[var(--color-prestige-charcoal)] shadow-[var(--shadow-premium-sm)] hover:shadow-[var(--shadow-premium-md)] transition-all duration-200 active:scale-[0.99] cursor-pointer"
           >
-            {status === 'submitting' ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Sending Message...</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <span>Send Message</span>
-                <Send className="w-4 h-4" />
-              </span>
-            )}
+            <WhatsAppIcon className="w-5 h-5 text-emerald-800 shrink-0" />
+            <span className="font-semibold text-sm sm:text-base">Continue on WhatsApp</span>
           </Button>
 
           <p className="mt-3 text-[11px] text-center text-[var(--color-neutral-500)] leading-relaxed">
-            By submitting this form, you acknowledge that your contact details will be used solely by
-            SAI PRESTIGE to respond to your real estate enquiry.
+            Your enquiry details will be pre-filled in WhatsApp so you can review and chat directly with our senior advisory team at +91 93264 33965.
           </p>
         </div>
       </form>

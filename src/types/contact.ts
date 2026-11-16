@@ -24,7 +24,7 @@ export interface ContactFormData {
   requirement: ContactRequirement | '';
   location?: string;
   message: string;
-  turnstileToken: string;
+  turnstileToken?: string;
   website_url?: string; // Honeypot field (must remain empty)
 }
 
