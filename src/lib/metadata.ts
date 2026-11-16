@@ -24,6 +24,20 @@ export function constructMetadata({
     alternates: {
       canonical: url,
     },
+    icons: {
+      icon: [
+        { url: '/favicon.ico', sizes: '48x48 32x32 16x16', type: 'image/x-icon' },
+        { url: '/icon-48.png', sizes: '48x48', type: 'image/png' },
+        { url: '/icon-96.png', sizes: '96x96', type: 'image/png' },
+        { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { url: '/icon.png', sizes: '96x96', type: 'image/png' },
+      ],
+      apple: [
+        { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      ],
+      shortcut: '/favicon.ico',
+    },
+    manifest: '/site.webmanifest',
     openGraph: {
       title: pageTitle,
       description,
