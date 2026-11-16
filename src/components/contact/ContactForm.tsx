@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { CONTACT_REQUIREMENTS, ContactRequirement } from '@/types/contact';
-import { Button } from '@/components/ui/Button';
 import { WhatsAppIcon } from '@/components/ui/WhatsAppIcon';
 import { AlertCircle, ExternalLink } from 'lucide-react';
 import { trackEnquiryConversion } from '@/lib/analytics';
@@ -445,17 +444,14 @@ export const ContactForm: React.FC = () => {
 
         {/* Action Button: Continue on WhatsApp */}
         <div className="pt-2">
-          <Button
+          <button
             type="submit"
-            variant="primary"
-            size="lg"
-            fullWidth
             disabled={!isFormValid}
-            className="font-medium tracking-wide flex items-center justify-center gap-2.5 bg-[var(--color-prestige-gold)] hover:bg-[var(--color-prestige-gold-light)] text-[var(--color-prestige-charcoal)] shadow-[var(--shadow-premium-sm)] hover:shadow-[var(--shadow-premium-md)] transition-all duration-200 active:scale-[0.99] cursor-pointer"
+            className="w-full h-12 sm:h-12.5 px-6 rounded-lg font-semibold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2.5 bg-[var(--color-prestige-gold)] hover:bg-[var(--color-prestige-gold-dark)] text-neutral-900 border border-[var(--color-prestige-gold-dark)]/25 shadow-[var(--shadow-subtle)] hover:shadow-[var(--shadow-premium-sm)] active:scale-[0.99] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-prestige-gold)] focus-visible:ring-offset-2"
           >
-            <WhatsAppIcon className="w-5 h-5 text-emerald-800 shrink-0" />
-            <span className="font-semibold text-sm sm:text-base">Continue on WhatsApp</span>
-          </Button>
+            <WhatsAppIcon className="w-5 h-5 shrink-0 text-neutral-900" />
+            <span className="leading-none select-none">Continue on WhatsApp</span>
+          </button>
 
           <p className="mt-3 text-[11px] text-center text-[var(--color-neutral-500)] leading-relaxed">
             Your enquiry details will be pre-filled in WhatsApp so you can review and chat directly with our senior advisory team at +91 93264 33965.
